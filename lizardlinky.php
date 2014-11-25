@@ -30,7 +30,7 @@ developer to Gerrit before they are acted upon.
 <?php
 define('LIZARDLINKY_VERSION', trim(`git describe --always --dirty --long`));
 
-echo "This is LizardLinky version " . LIZARDLINKY_VERSION . ".\n";
+echo "This is LizardLinky version " . LIZARDLINKY_VERSION . ".\n\n";
 
 function getLine($ircLink, $debug = false) {
         $toRead = array($ircLink);
@@ -96,6 +96,40 @@ function reportToIRC($ircLink, $reportText) {
 		return;
 }
 
+function echoAndReport($ircLink, $reportText) {
+	echo "[>] {$reportText}\n";
+	reportToIRC($ircLink, $reportText);
+	return;
+}
+
+//Runs the given MySQL query.  Opens a new connection of $mysqli is not provided.
+//Returns the $mysqli object.  This allows for one-off queries to be executed like this:
+// queryDB($ircLink, "SELECT * FROM `blah`", $result)->close();
+function queryDB($ircLink, $query, &$result, &$mysqli = false) {
+	global $conf;
+
+	if($mysqli === false) {
+		$mysqli = new mysqli($conf['dbHost'], $conf['dbUsername'], $conf['dbPassword'], $conf['dbSchema'], (int)$conf['dbPort']);
+		if($mysqli->connect_error) {
+			echoAndReport($ircLink, "[ERROR] MySQL Connect Failed - Unable to connect to MySQL database: {$mysqli->connect_error} ({$mysqli->connect_errno}).");
+			$result = false;
+			return $mysqli;
+		}
+		if(!$mysqli->set_charset("utf8")) {
+			echoAndReport($ircLink, "[ERROR] MySQL Set Charset Failed - Failed setting the MySQL connection charset to \"utf8\"");
+			$result = false;
+			return $mysqli;
+		}
+	}
+
+	$result = $mysqli->query($query, MYSQLI_STORE_RESULT);
+	if($result === false) {
+		echoAndReport($ircLink, "[ERROR] MySQL Query Failed - A MySQL query failed with this error message: {$mysql->error}");
+	}
+
+	return $mysqli;
+}
+
 echo "[*] Defining POSIX signal handlers...";
 function ONSIGHUP() {
 	return;
@@ -148,6 +182,14 @@ try {
 }
 
 echo "\010\010\010 [OK]\n";
+
+echo "[*] Testing MySQL connection...";
+queryDB(null, "SELECT 'test'", $result)->close();
+if($result === false) {
+	die("\n[fail]\n");
+} else
+	echo "\010\010\010 [OK]\n";
+
 
 echo "[*] Initiating IRC connection to {$conf['server']} on port {$conf['port']}...";
 
