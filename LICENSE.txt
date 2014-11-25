@@ -2,7 +2,7 @@ LIZARDLINKY
 By Andrew "FastLizard4" Adams and the LizardLinky Development Team (see
 AUTHORS.txt file)
 
-Copyright (C) 2013 by Andrew "FastLizard4" Adams and the LizardLinky Development
+Copyright (C) 2014 by Andrew "FastLizard4" Adams and the LizardLinky Development
 Team. Some rights reserved.
 
 License GPLv3+: GNU General Public License version 3 or later (at your choice):
