@@ -1,0 +1,69 @@
+<?php
+/* LIZARDLINKY CONFIG FILE */
+$conf = array();
+
+//Nickname of bot to use on network
+$conf['nick'] = "LizardLinky";
+
+//Username of the bot to use on the network, assuming that there's no identd
+$conf['ident'] = "LizardLinky";
+
+//Gecos/realname of the bot to use on the network
+$conf['gecos'] = "LizardLinky - Wikilink expansion bot";
+
+//Server bot should connect to.
+//If the server requires a password, specify it in $conf['serverPass'].
+$conf['server'] = "server0.example.com";
+$conf['serverPass'] = "";
+
+//Port bot should connect to
+$conf['port'] = 6667;
+
+//Should the bot use SSL to connect to the server above?  If so, set this to true; otherwise,
+//false.
+$conf['useSSL'] = false;
+
+//Modes to set on self after connecting.  Should be something like "+B-x", where modes after +
+//are set and modes after - are unset.  Leave blank to do nothing with modes.
+$conf['umodes'] = "";
+
+//NickServ identification bot should send.  Leave blank if the bot shouldn't identify to services.
+//This will be sent as "PRIVMSG NickServ :IDENTIFY <blah>", where <blah> is what you specify below.
+$conf['nickServ'] = "";
+
+//Report channels.  This is an array of channels that the bot will log administrative stuff to,
+//such as ACL changes, channel joins and parts (and kicks), and that sort of thing.  Notably,
+//wikilink expansions will *not* be logged.
+$conf['reportChannels'] = array();
+$conf['reportChannels'][] = "#lizardlinky";
+
+//MySQL database information.  The bot will use this information to establish a connection to its
+//configuration databases.  Included in the database are such things as:
+// * The interwiki table
+// * A list of channels it is to join
+// * Each channel's target URL for wikilinks
+// * Global ACLs
+
+//MySQL server to connect to
+$conf['dbHost'] = "localhost";
+$conf['dbPort'] = "3306";
+
+//MySQL database name to use (the database and tables should be created before running the bot; see
+//README.md
+$conf['dbSchema'] = "lizardlinky";
+
+//If this is set, the bot will look for (and use) tables that start with this prefix and an
+//underscore, followed by the table's name.  Useful for running multiple instances of LizardLinky
+//from the same MySQL database.
+$conf['dbPrefix'] = null;
+
+//MySQL connection credentials.  Be sure this file is properly protected!
+//Information on what MySQL privileges the LizardLinky user needs is provided in the README.md file.
+$conf['dbUsername'] = "lizardlinky";
+$conf['dbPassword'] = "p@ssw0rd";
+
+//LizardLinky "kill" password
+//As an additional level of security, only users who know this password will be able to kill or restart
+//the bot.  This is in addition to having the appropriate global access level set.
+$conf['diepass'] = "ploppy";
+?>
