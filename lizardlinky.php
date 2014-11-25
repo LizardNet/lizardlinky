@@ -287,7 +287,7 @@ while(!feof($ircLink)) {
 					if($lineIn[1] == "KICK" && trim($lineIn[4]) != "") {
 						$lineIn[4] = trim($lineIn[4]);
 						echo " ^  The reason for the kick was: {$lineIn[4]}\n";
-						reportToIRC($ircLink, "[WARN] Kick - I was kicked from {$lineIn[2]} by {$lineIn[0]} with message {$lineIn[3]}.");
+						reportToIRC($ircLink, "[WARN] Kick - I was kicked from {$lineIn[2]} by {$lineIn[0]['full']} with message {$lineIn[3]}.");
 					} elseif($lineIn[1] == "PART" && trim($lineIn[3]) != "") {
 						$lineIn[3] = trim($lineIn[3]);
 						echo " ^  The reason for the part was: {$lineIn[3]}\n";
@@ -295,7 +295,7 @@ while(!feof($ircLink)) {
 					} else {
 						echo " ^  No reason was provided by IRC.\n";
 						if($lineIn[1] == "KICK")
-							reportToIRC($ircLink, "[WARN] Kick - I was kicked from {$lineIn[2]} by {$lineIn[0]} for no reason!");
+							reportToIRC($ircLink, "[WARN] Kick - I was kicked from {$lineIn[2]} by {$lineIn[0]['full']} for no reason!");
 						else
 							reportToIRC($ircLink, "[INFO] Part - I parted from {$lineIn[2]} with no part message.");
 					}
