@@ -36,8 +36,8 @@ License GPLv3+: GNU General Public License version 3 or later (at your choice):
 <http://gnu.org/licenses/gpl.html>. This is free software: you are free to
 change and redistribute it at your will provided that your redistribution, with
 or without modifications, is also licensed under the GNU GPL. (Although not
-required by the license, we also ask that you attribute us!) There is NO
-WARRANTY FOR THIS SOFTWARE to the extent permitted by law.
+required by the license, we also ask that you attribute us!) There is **NO
+WARRANTY FOR THIS SOFTWARE** to the extent permitted by law.
 
 Portions of this code are reused from a sister LizardNet project, the [LizardIRC
 Network Operations Bot][NOC-Bot], which is also licensed under the GNU GPLv3+.
