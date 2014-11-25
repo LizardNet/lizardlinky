@@ -28,7 +28,7 @@ Note: Pull requests and patches submitted to GitHub will be transferred by a
 developer to Gerrit before they are acted upon.
 
 <?php
-define('LIZARDLINKY_VERSION', `git describe --always --dirty --long`);
+define('LIZARDLINKY_VERSION', trim(`git describe --always --dirty --long`));
 
 echo "This is LizardLinky version " . LIZARDLINKY_VERSION . ".\n";
 
@@ -71,7 +71,7 @@ function getLine($ircLink, $debug = false) {
 	if(preg_match("/^.*!.*@.*$/", $lineIn[0])) {
 		$nickmask = $lineIn[0];
 		$lineIn[0] = array();
-		$lineIn[0]["full"] = $nickmask;
+		$lineIn[0]["full"] = trim($nickmask);
 		$temp = explode('!', $nickmask);
 		$lineIn[0]["nick"] = trim($temp[0]);
 		$temp = explode('@', $temp[1]);
