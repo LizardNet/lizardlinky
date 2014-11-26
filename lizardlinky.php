@@ -153,6 +153,10 @@ echo "\010\010\010 [OK]\n";
 $restartCount = 0;
 
 start:
+$globalACL = array();
+$channels = array();
+$interwikis = array();
+
 echo "[*] Reading configuration file lizardlinky.conf.inc...";
 require_once('lizardlinky.conf.inc');
 echo "\010\010\010 [OK]\n";
@@ -174,6 +178,9 @@ try {
 	if(!is_int($conf['port']))
 		throw new Exception(" ^  Required configuration value \$conf['port'] is not an integer value.  Please check your configuration file.\n");
 
+	if(count($conf['roots']) == 0)
+		echo "\n ^  Warning: No roots are defined in \$conf['roots'].  If you are unable to control your own bot, setting this may help....";
+
 } catch(Exception $e) {
 	echo "\010\010\010 [fail]\n";
 	echo "[!] Caught exception!\n";
@@ -184,12 +191,50 @@ try {
 echo "\010\010\010 [OK]\n";
 
 echo "[*] Testing MySQL connection...";
-queryDB(null, "SELECT 'test'", $result)->close();
+$mysqli = queryDB(null, "SELECT 'test'", $result);
 if($result === false) {
 	die("\n[fail]\n");
 } else
 	echo "\010\010\010 [OK]\n";
 
+echo "[*] Loading dynamic configuration from MySQL database...";
+try {
+	queryDB(null, "SELECT `acl_hostmask`, `acl_group` FROM `global_acl` ORDER BY `acl_id` ASC", $result, $mysqli);
+	if($result === false)
+		throw new Exception(" ^  Error getting Global ACL data from MySQL.\n");
+	else {
+		echo "\n ^  Fetched {$result->num_rows} global ACL entries....";
+		$globalACL = $result->fetch_assoc();
+		foreach($conf['roots'] as $rootHostmask)
+			$globalACL[] = array('acl_hostmask' => $rootHostmask, 'acl_group' => 'root');
+		$result->free();
+	}
+
+	queryDB(null, "SELECT `channel_name`, `channel_default_url`, `channel_responsible_nick`, `channel_privileged_access`, `channel_status` FROM `channels` ORDER BY `channel_id` ASC", $result, $mysqli);
+	if($result === false)
+		throw new Exception(" ^  Error getting Channels data from MySQL.\n");
+	else {
+		echo "\n ^  Fetched {$result->num_rows} channel entries....";
+		$channels = $result->fetch_assoc();
+		$result->free();
+	}
+
+	queryDB(null, "SELECT `interwiki_prefix`, `interwiki_target_url` FROM `interwiki` ORDER BY `interwiki_id` ASC", $result, $mysqli)->close();
+	if($result === false)
+		throw new Exception(" ^  Error getting Interwiki data from MySQL.\n");
+	else {
+		echo "\n ^  Fetched {$result->num_rows} interwiki entries....";
+		$interwikis = $result->fetch_assoc();
+		$result->free();
+	}
+} catch(Exception $e) {
+	echo "\010\010\010 [fail]\n";
+	echo "[!] Error occurred - caught exception!\n";
+	echo $e->getMessage();
+	die();
+}
+
+echo "\010\010\010 [OK]\n";
 
 echo "[*] Initiating IRC connection to {$conf['server']} on port {$conf['port']}...";
 

@@ -66,4 +66,11 @@ $conf['dbPassword'] = "p@ssw0rd";
 //As an additional level of security, only users who know this password will be able to kill or restart
 //the bot.  This is in addition to having the appropriate global access level set.
 $conf['diepass'] = "ploppy";
+
+//Bot Roots
+//This array of hostmasks will always have full privileges on the bot's commands, regardless of any
+//modifications made to the global ACL saved in the MySQL database.  You should set this to at least
+//include yourself before starting the bot for the first time!
+$conf['roots'] = array();
+$conf['roots'][] = "*!*@localhost";
 ?>
