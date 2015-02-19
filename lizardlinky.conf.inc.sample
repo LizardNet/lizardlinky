@@ -73,4 +73,11 @@ $conf['diepass'] = "ploppy";
 //include yourself before starting the bot for the first time!
 $conf['roots'] = array();
 $conf['roots'][] = "*!*@localhost";
+
+//Trigger
+//This string will be used as the bots "trigger", or the string that must preceed any command intended
+//for the bot.  This is usually just a single character, but can be multiple.  Setting this to "!", for
+//example, will make the bot's help command "!help".  You might want to adjust this in a channel with
+//multiple bots, and wikilink expansion, as a "passive" action, does not need a trigger.
+$conf['trigger'] = "!";
 ?>

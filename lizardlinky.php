@@ -166,7 +166,7 @@ try {
 	if(!is_array($conf))
 		throw new Exception(" ^  $conf array not found.  Please check your configuration file.\n");
 
-	$requiredConfig = array('nick', 'ident', 'gecos', 'server', 'port', 'dbHost', 'dbPort', 'dbSchema', 'dbUsername', 'dbPassword', 'diepass');
+	$requiredConfig = array('nick', 'ident', 'gecos', 'server', 'port', 'dbHost', 'dbPort', 'dbSchema', 'dbUsername', 'dbPassword', 'diepass', 'trigger');
 
 	foreach($requiredConfig as $requiredConfigKey) {
 		if(!$conf[$requiredConfigKey] || $conf[$requiredConfigKey] == "") {
@@ -267,6 +267,13 @@ while(!feof($ircLink)) {
 		$lineIn[4] = trim($lineIn[4]);
 		echo " ^  The server said: {$lineIn[4]}";
 		die(" [fail]\n");
+	}
+	if($lineIn[0] == "PING") {
+		//Handle those pesky IRC networks that require a PONG to a pseudo-random hex string before registrations are processed.
+		//I really don't know why any networks still do this, as it's a terrible anti-bot measure.  For reasons that are hopefully
+		//obvious at this point.
+		$pongTarget = trim($lineIn[1]);
+		fwrite($ircLink, "PONG {$pongTarget}\r\n");
 	}
 	if($lineIn[1] == 001) {
 		echo "\010\010\010 [OK]\n";
