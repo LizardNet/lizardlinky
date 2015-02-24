@@ -130,6 +130,60 @@ function queryDB($ircLink, $query, &$result, &$mysqli = false) {
 	return $mysqli;
 }
 
+//Enumerates the groups that a user is in, by matching hostmask.
+//If the optional second parameter is set to anything except boolean false,
+//duplicate group grants will be included.  Otherwise, they will be discarded
+//(default).  Return an array if there are any group grants, boolean false otherwise.
+function getGroups($hostmask, $dupes = false) {
+	global $globalACL;
+
+	$grantedGroups = false;
+
+	foreach($globalACL as $aclEntry) {
+		if(fnmatch($aclEntry['acl_hostmask'], $hostmask)) {
+			//Matching hostmask in global ACL
+			//Alas, this only works on POSIX systems, but we already have
+			//POSIX-only signal handlers in this code.  So there, Windows.
+			$grantedGroups = array();
+			if($dupes === false) {
+				$grantedGroups[$aclEntry['acl_group']] = $aclEntry['acl_id'];
+			} else {
+				$grantedGroups[][$aclEntry['acl_group']] = $aclEntry['acl_id'];
+			}
+		}
+	}
+
+	return $grantedGroups;
+}
+
+//Checks if a user has a certain privilege.
+//Privileges are mapped to user groups, and hostmasks in the global ACL table are members
+//of one or more groups, one row per group (a granted group is adding a row, revoking
+//a group membership is deleting that row).  Note that hostmasks in the global ACL table
+//cannot by definition be a member of zero groups - presence in zero groups is accomplished
+//by having zero entries for that hostmask.  For a privilege check, the bot will first
+//get a list of all hostmasks that match a user, and then a list of the groups granted by
+//these hostmasks.  Eventually, there will be an array in the configuration file that
+//will be used to define custom groups and what privileges they have, and this function
+//will consult that array, but for now, there is only one recognized group hard-coded
+//into the bot - 'root' - and it has all privileges.
+//
+//Function returns true if an action is authorized, false otherwise.
+function hasPriv($hostmask, $privilege) {
+	global $conf;
+
+	$grantedGroups = getGroups($hostmask);
+
+	foreach($grantedGroups as $group => $aclID) {
+		if($conf['groupPermissions'][$group][$privilege] === true || $group === "root") {
+			//We don't need to keep looking if we find a granted privilege - just one grant is enough
+			return true;
+		}
+	}
+
+	return false;
+}
+
 echo "[*] Defining POSIX signal handlers...";
 function ONSIGHUP() {
 	return;
@@ -199,14 +253,14 @@ if($result === false) {
 
 echo "[*] Loading dynamic configuration from MySQL database...";
 try {
-	queryDB(null, "SELECT `acl_hostmask`, `acl_group` FROM `global_acl` ORDER BY `acl_id` ASC", $result, $mysqli);
+	queryDB(null, "SELECT `acl_id`, `acl_hostmask`, `acl_group` FROM `global_acl` ORDER BY `acl_id` ASC", $result, $mysqli);
 	if($result === false)
 		throw new Exception(" ^  Error getting Global ACL data from MySQL.\n");
 	else {
 		echo "\n ^  Fetched {$result->num_rows} global ACL entries....";
 		$globalACL = $result->fetch_assoc();
 		foreach($conf['roots'] as $rootHostmask)
-			$globalACL[] = array('acl_hostmask' => $rootHostmask, 'acl_group' => 'root');
+			$globalACL[] = array('acl_id' => "(config)", 'acl_hostmask' => $rootHostmask, 'acl_group' => 'root');
 		$result->free();
 	}
 
@@ -397,6 +451,46 @@ while(!feof($ircLink)) {
 			}
 
 			//Main body
+
+			//"myaccess" command - tells a user what groups they are members of in the global ACL
+			if(trim($lineIn[3]) == "{$conf['trigger']}myaccess") {
+				$reportLine = "[INFO] User {$lineIn[0]['nick']} requested their access rights using the myaccess command in ";
+
+				$response = "You were granted ";
+				$groups = getGroups($lineIn[0]['full'], true);
+				$numGroups = count($groups);
+				$entryNumber = 0;
+
+				foreach($groups as $group) {
+					foreach($group as $groupName => $aclID) {
+						$entryNumber++;
+						$response .= "group '{$groupName}' by ACL entry {$aclID}";
+
+						if($numGroups > 1) {
+							if($entryNumber === $numGroups - 1) {
+								$response .= ", and ";
+							} else {
+								$response .= ", ";
+							}
+						} else {
+							$response .= ".";
+						}
+					}
+				}
+
+				if($lineIn[2] == $conf['nick']) {
+					//This is a private message
+					$reportLine .= "a private message.";
+					fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :{$response}\r\n");
+					reportToIRC($ircLink, $reportLine);
+				} else {
+					//This was a public message
+					$reportLine .= "channel {$lineIn[2]}.";
+					$response = $lineIn[0]['nick'] . ": " . $response;
+					fwrite($ircLink, "PRIVMSG {$lineIn[2]} :{$response}\r\n");
+					reportToIRC($ircLink, $reportLine);
+				}
+			}
 		}
 	}
 }
