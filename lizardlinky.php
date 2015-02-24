@@ -184,6 +184,27 @@ function hasPriv($hostmask, $privilege) {
 	return false;
 }
 
+function transmitLine($ircLink, $lineIn, $response, $reportLine = false) {
+	global $conf;
+
+	if($lineIn[2] == $conf['nick']) {
+		//This is a private message
+		fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :{$response}\r\n");
+		if($reportLine) {
+			$reportLine .= "a private message.";
+			reportToIRC($ircLink, $reportLine);
+		}
+	} else {
+		//This was a public message
+		$response = $lineIn[0]['nick'] . ": " . $response;
+		fwrite($ircLink, "PRIVMSG {$lineIn[2]} :{$response}\r\n");
+		if($reportLine) {
+			$reportLine .= "channel {$lineIn[2]}.";
+			reportToIRC($ircLink, $reportLine);
+		}
+	}
+}
+
 echo "[*] Defining POSIX signal handlers...";
 function ONSIGHUP() {
 	return;
@@ -453,7 +474,7 @@ while(!feof($ircLink)) {
 			//Main body
 
 			//"myaccess" command - tells a user what groups they are members of in the global ACL
-			if(trim($lineIn[3]) == "{$conf['trigger']}myaccess") {
+			if($lineIn[3] == "{$conf['trigger']}myaccess") {
 				$reportLine = "[INFO] User {$lineIn[0]['nick']} requested their access rights using the myaccess command in ";
 
 				$response = "You were granted ";
@@ -478,18 +499,38 @@ while(!feof($ircLink)) {
 					}
 				}
 
-				if($lineIn[2] == $conf['nick']) {
-					//This is a private message
-					$reportLine .= "a private message.";
-					fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :{$response}\r\n");
-					reportToIRC($ircLink, $reportLine);
+				transmitLine($ircLink, $lineIn, $response, $reportLine);
+			}
+
+			//"die" command - allows a user to kill the bot, provided that they know the password.  Requires 'die' privilege.
+//			if(preg_match('/^' . preg_quote($conf['trigger'], '/') . 'die/', $lineIn[3])) {
+			if(strstr($lineIn[3], "{$conf['trigger']}die", true) === "") {
+				$parameters = explode(' ', $lineIn[3]);
+
+				$reportLine = false;
+
+				//This is like argv; the command called is always the "zeroth" parameter.
+				if(count($parameters) < 2) {
+					$response = "Error: Too few parameters.";
+				} elseif(count($parameters) > 2) {
+					$response = "Error: Too many parameters.";
 				} else {
-					//This was a public message
-					$reportLine .= "channel {$lineIn[2]}.";
-					$response = $lineIn[0]['nick'] . ": " . $response;
-					fwrite($ircLink, "PRIVMSG {$lineIn[2]} :{$response}\r\n");
-					reportToIRC($ircLink, $reportLine);
+					if($parameters[1] == $conf['diepass']) {
+						if(hasPriv($lineIn[0]['full'], 'die')) {
+							reportToIRC($ircLink, "[INFO] {$lineIn[0]['full']} told me to kill myself.  :(");
+							fwrite($ircLink, "QUIT :Ordered to death by {$lineIn[0]['nick']} :(\r\n");
+							fclose($ircLink);
+							die();
+						} else {
+							$response = "Error: You do not have the necessary privileges to run this command.";
+							$reportLine = "[WARN] User {$lineIn[0]['full']} attempted to use the 'die' command in ";
+						}
+					} else {
+						$response = "Error: You didn't say the magic word!";
+					}
 				}
+
+				transmitLine($ircLink, $lineIn, $response, $reportLine);
 			}
 		}
 	}
