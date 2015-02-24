@@ -102,6 +102,21 @@ function echoAndReport($ircLink, $reportText) {
 	return;
 }
 
+//Opens a MySQL connection without running a query.
+function openDB($ircLink) {
+	global $conf;
+
+	$mysqli = new mysqli($conf['dbHost'], $conf['dbUsername'], $conf['dbPassword'], $conf['dbSchema'], (int)$conf['dbPort']);
+	if($mysqli->connect_error) {
+		echoAndReport($ircLink, "[ERROR] MySQL Connect Failed - Unable to connect to MySQL database: {$mysqli->connect_error} ({$mysqli->connect_errno}).");
+	}
+	if(!$mysqli->set_charset("utf8")) {
+		echoAndReport($ircLink, "[ERROR] MySQL Set Charset Failed - Failed setting the MySQL connection charset to \"utf8\"");
+	}
+
+	return $mysqli;
+}
+
 //Runs the given MySQL query.  Opens a new connection of $mysqli is not provided.
 //Returns the $mysqli object.  This allows for one-off queries to be executed like this:
 // queryDB($ircLink, "SELECT * FROM `blah`", $result)->close();
@@ -124,7 +139,7 @@ function queryDB($ircLink, $query, &$result, &$mysqli = false) {
 
 	$result = $mysqli->query($query, MYSQLI_STORE_RESULT);
 	if($result === false) {
-		echoAndReport($ircLink, "[ERROR] MySQL Query Failed - A MySQL query failed with this error message: {$mysql->error}");
+		echoAndReport($ircLink, "[ERROR] MySQL Query Failed - A MySQL query failed with this error message: {$mysqli->error}");
 	}
 
 	return $mysqli;
@@ -173,10 +188,16 @@ function hasPriv($hostmask, $privilege) {
 
 	$grantedGroups = getGroups($hostmask);
 
-	foreach($grantedGroups as $group => $aclID) {
-		if($conf['groupPermissions'][$group][$privilege] === true || $group === "root") {
-			//We don't need to keep looking if we find a granted privilege - just one grant is enough
+	if($grantedGroups === false) {
+		if($conf['groupPermissions']['*'][$privilege] === true) {
 			return true;
+		}
+	} else {
+		foreach($grantedGroups as $group => $aclID) {
+			if($conf['groupPermissions'][$group][$privilege] === true || $group === "root" || $conf['groupPermissions']['*'][$privilege] === true) {
+				//We don't need to keep looking if we find a granted privilege - just one grant is enough
+				return true;
+			}
 		}
 	}
 
@@ -201,6 +222,55 @@ function transmitLine($ircLink, $lineIn, $response, $reportLine = false) {
 			$reportLine .= "channel {$lineIn[2]}.";
 			reportToIRC($ircLink, $reportLine);
 		}
+	}
+}
+function doLoadACL($startup = false) {
+	global $globalACL, $conf;
+
+	queryDB(null, "SELECT `acl_id`, `acl_hostmask`, `acl_group` FROM `{$conf['dbPrefix']}global_acl` ORDER BY `acl_id` ASC", $result)->close();
+	if($result === false)
+		throw new Exception(" ^  Error getting Global ACL data from MySQL.\n");
+	else {
+		if($startup) {
+			echo "\n ^  Fetched {$result->num_rows} global ACL entries....";
+		}
+		while($globalACL[] = $result->fetch_assoc());
+		foreach($conf['roots'] as $rootHostmask)
+			if($startup && !preg_match('/[^ !@]*![^ !@]*@[^ !@]*/', $rootHostmask)) {
+				die("\n[!] Error: Root hostmask entry '{$rootHostmask}' defined in configuration file (\$conf['roots']) is NOT a valid hostmask!\n");
+			}
+			$globalACL[] = array('acl_id' => "(config)", 'acl_hostmask' => $rootHostmask, 'acl_group' => 'root');
+		$result->free();
+	}
+}
+
+function doLoadChannels($startup = false) {
+	global $channels, $conf;
+
+	queryDB(null, "SELECT `channel_name`, `channel_default_url`, `channel_responsible_nick`, `channel_privileged_access`, `channel_status` FROM `{$conf['dbPrefix']}channels` ORDER BY `channel_id` ASC", $result)->close();
+	if($result === false)
+		throw new Exception(" ^  Error getting Channels data from MySQL.\n");
+	else {
+		if($startup) {
+			echo "\n ^  Fetched {$result->num_rows} channel entries....";
+		}
+		while($channels[] = $result->fetch_assoc());
+		$result->free();
+	}
+}
+
+function doLoadInterwikis($startup = false) {
+	global $interwikis, $conf;
+
+	queryDB(null, "SELECT `interwiki_prefix`, `interwiki_target_url` FROM `{$conf['dbPrefix']}interwiki` ORDER BY `interwiki_id` ASC", $result)->close();
+	if($result === false)
+		throw new Exception(" ^  Error getting Interwiki data from MySQL.\n");
+	else {
+		if($startup) {
+			echo "\n ^  Fetched {$result->num_rows} interwiki entries....";
+		}
+		while($interwikis[] = $result->fetch_assoc());
+		$result->free();
 	}
 }
 
@@ -232,7 +302,7 @@ $channels = array();
 $interwikis = array();
 
 echo "[*] Reading configuration file lizardlinky.conf.inc...";
-require_once('lizardlinky.conf.inc');
+require('lizardlinky.conf.inc');
 echo "\010\010\010 [OK]\n";
 
 echo "[*] Checking required configuration values...";
@@ -265,6 +335,9 @@ try {
 echo "\010\010\010 [OK]\n";
 
 echo "[*] Testing MySQL connection...";
+if(isset($conf['dbPrefix'])) {
+	$conf['dbPrefix'] .= "_";
+}
 $mysqli = queryDB(null, "SELECT 'test'", $result);
 if($result === false) {
 	die("\n[fail]\n");
@@ -273,34 +346,9 @@ if($result === false) {
 
 echo "[*] Loading dynamic configuration from MySQL database...";
 try {
-	queryDB(null, "SELECT `acl_id`, `acl_hostmask`, `acl_group` FROM `global_acl` ORDER BY `acl_id` ASC", $result, $mysqli);
-	if($result === false)
-		throw new Exception(" ^  Error getting Global ACL data from MySQL.\n");
-	else {
-		echo "\n ^  Fetched {$result->num_rows} global ACL entries....";
-		while($globalACL[] = $result->fetch_assoc());
-		foreach($conf['roots'] as $rootHostmask)
-			$globalACL[] = array('acl_id' => "(config)", 'acl_hostmask' => $rootHostmask, 'acl_group' => 'root');
-		$result->free();
-	}
-
-	queryDB(null, "SELECT `channel_name`, `channel_default_url`, `channel_responsible_nick`, `channel_privileged_access`, `channel_status` FROM `channels` ORDER BY `channel_id` ASC", $result, $mysqli);
-	if($result === false)
-		throw new Exception(" ^  Error getting Channels data from MySQL.\n");
-	else {
-		echo "\n ^  Fetched {$result->num_rows} channel entries....";
-		while($channels[] = $result->fetch_assoc());
-		$result->free();
-	}
-
-	queryDB(null, "SELECT `interwiki_prefix`, `interwiki_target_url` FROM `interwiki` ORDER BY `interwiki_id` ASC", $result, $mysqli)->close();
-	if($result === false)
-		throw new Exception(" ^  Error getting Interwiki data from MySQL.\n");
-	else {
-		echo "\n ^  Fetched {$result->num_rows} interwiki entries....";
-		while($interwikis[] = $result->fetch_assoc());
-		$result->free();
-	}
+	doLoadACL(true);
+	doLoadChannels(true);
+	doLoadInterwikis(true);
 } catch(Exception $e) {
 	echo "\010\010\010 [fail]\n";
 	echo "[!] Error occurred - caught exception!\n";
@@ -534,6 +582,197 @@ while(!feof($ircLink)) {
 				}
 
 				transmitLine($ircLink, $lineIn, $response, $reportLine);
+			}
+
+			//"restart" command - like "die", except the bot restarts afterwards
+			if(strstr($lineIn[3], "{$conf['trigger']}restart", true) === "") {
+				$parameters = explode(' ', $lineIn[3]);
+
+				$reportLine = false;
+
+				//This is like argv; the command called is always the "zeroth" parameter.
+				if(count($parameters) < 2) {
+					$response = "Error: Too few parameters.";
+				} elseif(count($parameters) > 2) {
+					$response = "Error: Too many parameters.";
+				} else {
+					if($parameters[1] == $conf['diepass']) {
+						if(hasPriv($lineIn[0]['full'], 'restart')) {
+							reportToIRC($ircLink, "[INFO] {$lineIn[0]['full']} told me to restart.  :(");
+							fwrite($ircLink, "QUIT :{$lineIn[0]['nick']} has asked me to restart\r\n");
+							fclose($ircLink);
+							unset($ircLink);
+
+							//Alright, let's talk about this line.
+							goto start;
+							//Yes, I've heard the lecture about how gotos are bad and whatnot.  I've read the xkcd, listened
+							//to professors and "professionals" alike babble on about it.  Perhaps goto is bad form, but in
+							//this case, it's also the *easiest* way to "start over from the top".  Yeah, I could do some
+							//weird stuff with exec(), or restructure the program's flow, and perhaps that would make this
+							//program "better formed", but it's not worth the time or the effort.  Using goto is the easiest
+							//solution, and the best solution to any problem is the easiest one.
+						} else {
+							$response = "Error: You do not have the necessary privileges to run this command.";
+							$reportLine = "[WARN] User {$lineIn[0]['full']} attempted to use the 'restart' command in ";
+						}
+					} else {
+						$response = "Error: You didn't say the magic word!";
+					}
+				}
+
+				transmitLine($ircLink, $lineIn, $response, $reportLine);
+			}
+
+			//This block contains the global ACL manipulation commands
+			if(strstr($lineIn[3], "{$conf['trigger']}acl", true) === "") {
+				$parameters = explode(' ', $lineIn[3]);
+
+				if($parameters[1] == "list") {
+					//"acl list" command - lists all ACL entries, in PM to prevent spam, one ACL entry per line with an appropriate anti-flood delay
+					if(hasPriv($lineIn[0]['full'], 'acl-list')) {
+						if(count($parameters) > 2) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'acl list' command.");
+						} else {
+							reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} is requesting the ACL list.");
+							if($lineIn[2] != $conf['nick']) {
+								fwrite($ircLink, "PRIVMSG {$lineIn[2]} :{$lineIn[0]['nick']}: Please see private message.\r\n");
+							}
+
+							fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :I am about to send you my complete global ACL.  This may take some time depending on the number of entries, and I will let you know when I'm done.  Please be patient.\r\n");
+							foreach($globalACL as $aclEntry) {
+								if(is_null($aclEntry)) {
+									continue;
+								}
+								fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :Entry ID {$aclEntry['acl_id']}: Hostmask '{$aclEntry['acl_hostmask']}', granted group '{$aclEntry['acl_group']}'\r\n");
+								sleep(1);
+							}
+							fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :--- End of global ACL ---\r\n");
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "add") {
+					//"acl add" command - takes two parameters, the hostmask and the group, and adds to the global ACL
+					if(hasPriv($lineIn[0]['full'], 'acl-modify')) {
+						if(count($parameters) < 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too few parameters for 'acl add' command.");
+						} elseif(count($parameters) > 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'acl add' command.");
+						} else {
+							if(!preg_match('/[^ !@]*![^ !@]*@[^ !@]*/', $parameters[2])) {
+								transmitLine($ircLink, $lineIn, "Error: This hostmask doesn't look valid.  Did you get the argument order wrong?");
+							} else {
+								$mysqli = openDB($ircLink);
+								$hostmask = $mysqli->real_escape_string($parameters[2]);
+								$group = $mysqli->real_escape_string($parameters[3]);
+
+								queryDB($ircLink, "INSERT INTO `{$conf['dbPrefix']}global_acl` (`acl_hostmask`, `acl_group`) VALUES ('{$hostmask}', '{$group}')", $result, $mysqli);
+								if($result === false || $mysqli->affected_rows != 1) {
+									$mysqli->close();
+									transmitLine($ircLink, $lineIn, "Error: MySQL error.  Please see the reporting channel for details.");
+								} else {
+									$mysqli->close();
+									transmitLine($ircLink, $lineIn, "Successfully added ACL entry to database, rereading ACL data....");
+									reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} added ACL entry for hostmask '{$parameters[2]}' granting group '{$parameters[3]}'.");
+									goto aclReload;
+								}
+							}
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "setgroup") {
+					//"acl setgroup" command - takes two parameters, the ACL entry ID and the group, and changes the indicated ACL entry to use the given group
+					if(hasPriv($lineIn[0]['full'], 'acl-modify')) {
+						if(count($parameters) < 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too few parameters for 'acl setgroup' command.");
+						} elseif(count($parameters) > 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'acl setgroup' command.");
+						} else {
+							$mysqli = openDB($ircLink);
+							$entryID = $mysqli->real_escape_string($parameters[2]);
+							$group = $mysqli->real_escape_string($parameters[3]);
+
+							queryDB($ircLink, "UPDATE `{$conf['dbPrefix']}global_acl` SET `acl_group`='{$group}' WHERE `acl_id`='{$entryID}' LIMIT 1", $result, $mysqli);
+							if(!$result || $mysqli->affected_rows != 1) {
+								$mysqli->close();
+								transmitLine($ircLink, $lineIn, "Error: MySQL error.  The reporting channel may have more details.  Check that you did not specify a nonexistent or invalid ACL entry ID.");
+							} else {
+								$mysqli->close();
+								transmitLine($ircLink, $lineIn, "Successfully updated ACL entry, rereading ACL data....");
+								foreach($globalACL as $aclEntry) {
+									if($aclEntry['acl_id'] == $parameters[2]) {
+										$oldGroup = $aclEntry['acl_group'];
+										break;
+									}
+								}
+								reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} updated ACL entry {$parameters[2]}, setting group to '{$parameters[3]}' (previously was '{$oldGroup}').");
+								goto aclReload;
+							}
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "rm") {
+					//"acl rm" command - takes one parameter, the ACL entry ID, and deletes that ACL entry
+					if(hasPriv($lineIn[0]['full'], 'acl-modify')) {
+						if(count($parameters) < 3) {
+							transmitLine($ircLink, $lineIn, "Error: Too few parameters for 'acl rm' command.");
+						} elseif(count($parameters) > 3) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'acl rm' command.");
+						} else {
+							$mysqli = openDB($ircLink);
+							$entryID = $mysqli->real_escape_string($parameters[2]);
+
+							queryDB($ircLink, "DELETE FROM `{$conf['dbPrefix']}global_acl` WHERE `acl_id`='{$entryID}' LIMIT 1", $result, $mysqli);
+							if(!$result || $mysqli->affected_rows != 1) {
+								$mysqli->close();
+								transmitLine($ircLink, $lineIn, "Error: MySQL error.  The reporting channel may have more details.  Check that you did not specify a nonexistent or invalid ACL entry ID.");
+							} else {
+								$mysqli->close();
+								transmitLine($ircLink, $lineIn, "Successfully deleted ACL entry, rereading ACL data....");
+								foreach($globalACL as $aclEntry) {
+									if($aclEntry['acl_id'] == $parameters[2]) {
+										$oldGroup = $aclEntry['acl_group'];
+										$oldHostmask = $aclEntry['acl_hostmask'];
+										break;
+									}
+								}
+								reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} \002deleted\002 ACL entry {$parameters[2]} (hostmask: '{$oldHostmask}', group: '{$oldGroup}').");
+								goto aclReload;
+							}
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "reload") {
+					//"acl reload" command - forces a reload
+					aclReload:
+					if(hasPriv($lineIn[0]['full'], 'acl-modify')) {
+						$globalACLOld = $globalACL;
+						$globalACL = array();
+						$success = true;
+						try {
+							doLoadACL();
+						} catch(Exception $e) {
+							$success = false;
+						}
+						if($success) {
+							transmitLine($ircLink, $lineIn, "Done.");
+							reportToIRC($ircLink, "[INFO] Global ACL data reloaded by {$lineIn[0]['nick']}.");
+						} else {
+							transmitLine($ircLink, $lineIn, "Failed.  Continuing with old ACL data!");
+							reportToIRC($ircLink, "[WARN] Failed reloading global ACL data, as requested by {$lineIn[0]['nick']}; continuing with old data");
+							$globalACL = $globalACLOld;
+							unset($globalACLOld);
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} else {
+					//No subcommand specified
+					transmitLine($ircLink, $lineIn, "Error: Too few arguments.  Use one of 'acl list', 'acl add', 'acl setgroup', 'acl rm', or 'acl reload'.");
+				}
 			}
 		}
 	}
