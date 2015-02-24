@@ -144,7 +144,6 @@ function getGroups($hostmask, $dupes = false) {
 			//Matching hostmask in global ACL
 			//Alas, this only works on POSIX systems, but we already have
 			//POSIX-only signal handlers in this code.  So there, Windows.
-			$grantedGroups = array();
 			if($dupes === false) {
 				$grantedGroups[$aclEntry['acl_group']] = $aclEntry['acl_id'];
 			} else {
@@ -279,7 +278,7 @@ try {
 		throw new Exception(" ^  Error getting Global ACL data from MySQL.\n");
 	else {
 		echo "\n ^  Fetched {$result->num_rows} global ACL entries....";
-		$globalACL = $result->fetch_assoc();
+		while($globalACL[] = $result->fetch_assoc());
 		foreach($conf['roots'] as $rootHostmask)
 			$globalACL[] = array('acl_id' => "(config)", 'acl_hostmask' => $rootHostmask, 'acl_group' => 'root');
 		$result->free();
@@ -290,7 +289,7 @@ try {
 		throw new Exception(" ^  Error getting Channels data from MySQL.\n");
 	else {
 		echo "\n ^  Fetched {$result->num_rows} channel entries....";
-		$channels = $result->fetch_assoc();
+		while($channels[] = $result->fetch_assoc());
 		$result->free();
 	}
 
@@ -299,7 +298,7 @@ try {
 		throw new Exception(" ^  Error getting Interwiki data from MySQL.\n");
 	else {
 		echo "\n ^  Fetched {$result->num_rows} interwiki entries....";
-		$interwikis = $result->fetch_assoc();
+		while($interwikis[] = $result->fetch_assoc());
 		$result->free();
 	}
 } catch(Exception $e) {
@@ -482,19 +481,23 @@ while(!feof($ircLink)) {
 				$numGroups = count($groups);
 				$entryNumber = 0;
 
-				foreach($groups as $group) {
-					foreach($group as $groupName => $aclID) {
-						$entryNumber++;
-						$response .= "group '{$groupName}' by ACL entry {$aclID}";
+				if($groups === false) {
+					$response = "You have no special permissions granted to you.";
+				} else {
+					foreach($groups as $group) {
+						foreach($group as $groupName => $aclID) {
+							$entryNumber++;
+							$response .= "group '{$groupName}' by ACL entry {$aclID}";
 
-						if($numGroups > 1) {
-							if($entryNumber === $numGroups - 1) {
-								$response .= ", and ";
+							if($numGroups > 1) {
+								if($entryNumber === $numGroups - 1) {
+									$response .= ", and ";
+								} else {
+									$response .= ", ";
+								}
 							} else {
-								$response .= ", ";
+								$response .= ".";
 							}
-						} else {
-							$response .= ".";
 						}
 					}
 				}
