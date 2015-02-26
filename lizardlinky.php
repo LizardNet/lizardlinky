@@ -262,7 +262,7 @@ function doLoadChannels($startup = false) {
 function doLoadInterwikis($startup = false) {
 	global $interwikis, $conf;
 
-	queryDB(null, "SELECT `interwiki_prefix`, `interwiki_target_url` FROM `{$conf['dbPrefix']}interwiki` ORDER BY `interwiki_id` ASC", $result)->close();
+	queryDB(null, "SELECT `interwiki_prefix`, `interwiki_target_url` FROM `{$conf['dbPrefix']}interwiki` ORDER BY `interwiki_prefix` ASC", $result)->close();
 	if($result === false)
 		throw new Exception(" ^  Error getting Interwiki data from MySQL.\n");
 	else {
@@ -644,7 +644,7 @@ while(!feof($ircLink)) {
 									continue;
 								}
 								fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :Entry ID {$aclEntry['acl_id']}: Hostmask '{$aclEntry['acl_hostmask']}', granted group '{$aclEntry['acl_group']}'\r\n");
-								sleep(1);
+								sleep(0.5);
 							}
 							fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :--- End of global ACL ---\r\n");
 						}
@@ -772,6 +772,160 @@ while(!feof($ircLink)) {
 				} else {
 					//No subcommand specified
 					transmitLine($ircLink, $lineIn, "Error: Too few arguments.  Use one of 'acl list', 'acl add', 'acl setgroup', 'acl rm', or 'acl reload'.");
+				}
+			}
+			//This block contains the commands used to manipulate the interwiki list.
+			if(strstr($lineIn[3], "{$conf['trigger']}interwiki", true) === "") {
+				$parameters = explode(' ', $lineIn[3]);
+
+				if($parameters[1] == "list") {
+					//"interwiki add" command - adds a new interwiki prefix
+					if(hasPriv($lineIn[0]['full'], 'interwiki-list')) {
+						if(count($parameters) > 2) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'interwiki list' command.");
+						} else {
+							reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} is requesting the interwiki prefix list.");
+							if($lineIn[2] != $conf['nick']) {
+								fwrite($ircLink, "PRIVMSG {$lineIn[2]} :{$lineIn[0]['nick']}: Please see private message.\r\n");
+							}
+
+							fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :I am about to send you my complete interwiki prefix list.  This may take some time depending on the number of entries, and I will let you know when I'm done.  Please be patient.\r\n");
+							foreach($interwikis as $interwikiEntry) {
+								if(is_null($interwikiEntry)) {
+									continue;
+								}
+								fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :Interwiki prefix '{$interwikiEntry['interwiki_prefix']}:' points to '{$interwikiEntry['interwiki_target_url']}'\r\n");
+								sleep(0.5);
+							}
+							fwrite($ircLink, "PRIVMSG {$lineIn[0]['nick']} :--- End of interwiki list ---\r\n");
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "add") {
+					//"interwiki add" command - Takes two parameters, adds an interwiki prefix to the table.
+					if(hasPriv($lineIn[0]['full'], 'interwiki-modify')) {
+						if(count($parameters) < 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too few parameters for 'interwiki add' command.");
+						} elseif(count($parameters) > 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'interwiki add' command.");
+						} else {
+							if(!preg_match('/^([a-z][a-z:]*)?[a-z]$/', $parameters[2])) {
+								transmitLine($ircLink, $lineIn, "Error: Invalid interwiki prefix.  Interwiki prefixes may only consist of lower-case letters 'a' through 'z', and though they may *contain* colons (':') to simulate \"nested\" prefixes, they must not begin or end with a colon.");
+							} elseif(strstr($parameters[3], '$1') === false) {
+								transmitLine($ircLink, $lineIn, "Error: Invalid target URL.  Target URL must contain the string \"\$1\", which is replaced by the page title during link expansion.");
+							} else {
+								$mysqli = openDB($ircLink);
+								$prefix = $mysqli->real_escape_string($parameters[2]);
+								$targetURL = $mysqli->real_escape_string($parameters[3]);
+
+								queryDB($ircLink, "INSERT INTO `{$conf['dbPrefix']}interwiki` (`interwiki_prefix`, `interwiki_target_url`) VALUES ('{$prefix}', '{$targetURL}')", $result, $mysqli);
+								if($result === false || $mysqli->affected_rows != 1) {
+									$mysqli->close();
+									transmitLine($ircLink, $lineIn, "Error: MySQL error.  Please see the reporting channel for details.");
+								} else {
+									$mysqli->close();
+									transmitLine($ircLink, $lineIn, "Successfully added interwiki prefix to database, rereading interwiki data....");
+									reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} added to the database interwiki prefix '{$parameters[2]}:' pointing to target URL '{$parameters[3]}'.");
+									goto interwikiReload;
+								}
+							}
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "rm") {
+					//"interwiki rm" command - takes one parameter, the interwiki prefix, and deletes it from the interwiki list
+					if(hasPriv($lineIn[0]['full'], 'interwiki-modify')) {
+						if(count($parameters) < 3) {
+							transmitLine($ircLink, $lineIn, "Error: Too few parameters for 'interwiki rm' command.");
+						} elseif(count($parameters) > 3) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'interwiki rm' command.");
+						} else {
+							$mysqli = openDB($ircLink);
+							$prefix = $mysqli->real_escape_string($parameters[2]);
+
+							queryDB($ircLink, "DELETE FROM `{$conf['dbPrefix']}interwiki` WHERE `interwiki_prefix`='{$prefix}' LIMIT 1", $result, $mysqli);
+							if(!$result || $mysqli->affected_rows != 1) {
+								$mysqli->close();
+								transmitLine($ircLink, $lineIn, "Error: MySQL error.  The reporting channel may have more details.  Check that the interwiki prefix you specified exists (don't include the trailing colon).");
+							} else {
+								$mysqli->close();
+								transmitLine($ircLink, $lineIn, "Successfully deleted interwiki entry, rereading interwiki data....");
+								foreach($interwikis as $interwikiEntry) {
+									if($interwikiEntry['interwiki_prefix'] == $parameters[2]) {
+										$oldTarget = $interwikiEntry['interwiki_target_url'];
+										break;
+									}
+								}
+								reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} \002deleted\002 interwiki prefix {$parameters[2]} (target URL: '{$oldTarget}').");
+								goto interwikiReload;
+							}
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "settarget") {
+					//"interwiki settarget" command - takes two parameters, the interwiki prefix and a target URL, and changes the indicated prefix to use the new URL
+					if(hasPriv($lineIn[0]['full'], 'interwiki-modify')) {
+						if(count($parameters) < 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too few parameters for 'interwiki settarget' command.");
+						} elseif(count($parameters) > 4) {
+							transmitLine($ircLink, $lineIn, "Error: Too many parameters for 'interwiki settarget' command.");
+						} else {
+							if(strstr($parameters[3], '$1') === false) {
+								transmitLine($ircLink, $lineIn, "Error: Invalid target URL.  Target URL must contain the string \"\$1\", which is replaced by the page title during link expansion.");
+							} else {
+								$mysqli = openDB($ircLink);
+								$prefix = $mysqli->real_escape_string($parameters[2]);
+								$target = $mysqli->real_escape_string($parameters[3]);
+
+								queryDB($ircLink, "UPDATE `{$conf['dbPrefix']}interwiki` SET `interwiki_target_url`='{$target}' WHERE `interwiki_prefix`='{$prefix}' LIMIT 1", $result, $mysqli);
+								if(!$result || $mysqli->affected_rows != 1) {
+									$mysqli->close();
+									transmitLine($ircLink, $lineIn, "Error: MySQL error.  The reporting channel may have more details.  Check that the interwiki prefix you specified exists (don't include the trailing colon).");
+								} else {
+									$mysqli->close();
+									transmitLine($ircLink, $lineIn, "Successfully updated interwiki entry, rereading interwiki data....");
+									foreach($interwikis as $interwikiEntry) {
+										if($interwikiEntry['interwiki_prefix'] == $parameters[2]) {
+											$oldTarget = $interwikiEntry['interwiki_target_url'];
+											break;
+										}
+									}
+									reportToIRC($ircLink, "[INFO] {$lineIn[0]['nick']} updated interwiki prefix {$parameters[2]}, setting target URL to '{$parameters[3]}' (previously was '{$oldTarget}').");
+									goto interwikiReload;
+								}
+							}
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} elseif($parameters[1] == "reload") {
+					interwikiReload:
+					if(hasPriv($lineIn[0]['full'], 'interwiki-modify')) {
+						$interwikisOld = $interwikis;
+						$interwikis = array();
+						$success = true;
+						try {
+							doLoadInterwikis();
+						} catch(Exception $e) {
+							$success = false;
+						}
+						if($success) {
+							transmitLine($ircLink, $lineIn, "Done.");
+							reportToIRC($ircLink, "[INFO] Interwiki data reloaded by {$lineIn[0]['nick']}.");
+						} else {
+							transmitLine($ircLink, $lineIn, "Failed.  Continuing with old interwiki data!");
+							reportToIRC($ircLink, "[WARN] Failed reloading interwiki data, as requested by {$lineIn[0]['nick']}; continuing with old data");
+							$interwikis = $interwikisOld;
+							unset($interwikisOld);
+						}
+					} else {
+						transmitLine($ircLink, $lineIn, "Error: You do not have the necessary privileges to run this command.");
+					}
+				} else {
+					transmitLine($ircLink, $lineIn, "Error: Too few arguments.  Use one of 'intertwiki list', 'interwiki add', 'interwiki rm', 'interwiki settarget', or 'interwiki reload'.");
 				}
 			}
 		}

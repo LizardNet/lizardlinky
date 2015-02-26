@@ -44,7 +44,7 @@ CREATE TABLE `global_acl` (
 
 CREATE TABLE `channels` (
  `channel_id` int(10) unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
- `channel_name` varchar(64) NOT NULL,
+ `channel_name` varchar(64) NOT NULL UNIQUE KEY,
  `channel_default_url` varchar(256) NOT NULL DEFAULT 'https://en.wikipedia.org/wiki/$1',
  `channel_responsible_nick` varchar(64) NOT NULL,
  `channel_privileged_access` enum('+','%','@','&','~') NOT NULL DEFAULT '@',
@@ -53,6 +53,6 @@ CREATE TABLE `channels` (
 
 CREATE TABLE `interwiki` (
  `interwiki_id` int(10) unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
- `interwiki_prefix` varchar(32) NOT NULL,
+ `interwiki_prefix` varchar(32) NOT NULL UNIQUE KEY,
  `interwiki_target_url` varchar(256) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
