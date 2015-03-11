@@ -381,6 +381,10 @@ $globalACL = array();
 $channels = array();
 $interwikis = array();
 
+//Assume that the network only supports voice and ops.
+//This will be a string of STATUSMSG characters used by the IRC network, ordered from highest-ranking to lowest-ranking.
+$capabSTATUSMSG = "@+";
+
 echo "[*] Reading configuration file {$configFilename}...";
 require($configFilename);
 echo "\010\010\010 [OK]\n";
@@ -505,6 +509,17 @@ while(!feof($ircLink)) {
 		while(true) {
 			//Main loop
 			$lineIn = getLine($ircLink);
+
+			if($lineIn[1] == "005") {
+				//CAPAB notification from the IRC server.  Let's check for a list of supported prefixes!
+				echo "[+] Received CAPAB numeric 005, looking for STATUSMSG information...\n";
+				for($i = 3; $i < count($lineIn); $i++) {
+					if(strstr($lineIn[$i], "STATUSMSG=", true) === "") {
+						$capabSTATUSMSG =  substr($lineIn[$i], 10);
+						echo " ^  Network supports the following STATUSMSGs: {$capabSTATUSMSG}\n";
+					}
+				}
+			}
 
 			//Detect ping timeouts
 			if($lastPingTime + 300 <= time()) {
