@@ -47,7 +47,7 @@ CREATE TABLE `channels` (
  `channel_name` varchar(64) NOT NULL UNIQUE KEY,
  `channel_default_url` varchar(256) NOT NULL DEFAULT 'https://en.wikipedia.org/wiki/$1',
  `channel_responsible_nick` varchar(64) NOT NULL,
- `channel_privileged_access` enum('+','%','@','&','~') NOT NULL DEFAULT '@',
+ `channel_privileged_access` char(1) NOT NULL DEFAULT '@',
  `channel_status` enum('active','request','disabled') NOT NULL DEFAULT 'disabled'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
