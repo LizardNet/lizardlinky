@@ -28,9 +28,89 @@ Note: Pull requests and patches submitted to GitHub will be transferred by a
 developer to Gerrit before they are acted upon.
 
 <?php
+if(PHP_SAPI != "cli") {
+	die("LizardLinky must be used using the PHP CLI (Command Line Interface) binary.  The current reported PHP SAPI is: " . PHP_SAPI . "\n");
+}
+
 define('LIZARDLINKY_VERSION', trim(`git describe --always --dirty --long`));
+define('LIZARDLINKY_DEFAULT_CONFIG_FILENAME', 'lizardlinky.conf.inc');
 
 echo "This is LizardLinky version " . LIZARDLINKY_VERSION . ".\n\n";
+
+//Parse arguments
+//I probably really overengineered this....
+try {
+	//Set defaults for options set at the command line
+	$configFilename = LIZARDLINKY_DEFAULT_CONFIG_FILENAME;
+	$noMoreOptions = false;
+	$argumentsRequired = array();
+
+	if($_SERVER['argc'] > 1) {
+		for($i = 1; $i < $_SERVER['argc']; $i++) {
+			if(trim(substr($_SERVER['argv'][$i], 0, 2)) == '--' && !$noMoreOptions) {
+				//Switches
+				if(strcasecmp($_SERVER['argv'][$i], "--") === 0) {
+					//POSIX "end-of-options-list" option
+					$noMoreOptions = true;
+					continue;
+				} elseif(strcasecmp($_SERVER['argv'][$i], "--help") === 0) {
+					echo "Usage: php lizardlinky.php [OPTIONS]\n\n";
+					echo "Recognized options:\n";
+					echo "(Note: Mandatory arguments to long options are mandatory for short options too. Long options are case-insensitive, short options are case-sensitive.)\n";
+					echo "      --help\t\t\tThis help information.\n";
+					echo "      --version\t\t\tPrint the license and version information shown at every run, but then exit instead of doing anything useful.\n";
+					echo "  -c, --config FILENAME\t\tRun lizardlinky with the specified filename as the configuration file, instead of the default (" . LIZARDLINKY_DEFAULT_CONFIG_FILENAME . ").\n";
+					die(0);
+				} elseif(strcasecmp($_SERVER['argv'][$i], "--version") === 0) {
+					die(0); //noop
+				} elseif(strcasecmp($_SERVER['argv'][$i], "--config") === 0) {
+					if(!isset($_SERVER['argv'][$i+1])) {
+						throw new Exception("Option '{$_SERVER['argv'][$i]}' requires an argument.");
+					} else {
+						$configFilename = $_SERVER['argv'][$i+1];
+						$i++;
+						continue;
+					}
+				} else {
+					throw new Exception("Unrecognized option '{$_SERVER['argv'][$i]}'");
+				}
+			} elseif(trim(substr($_SERVER['argv'][$i], 0, 1)) == '-' && !$noMoreOptions) {
+				//Short switches
+				for($j = 1; $j < strlen($_SERVER['argv'][$i]); $j++) {
+					switch($shortOption = trim(substr($_SERVER['argv'][$i], $j, 1))) {
+						case 'c':
+							$argumentsRequired[] = 'c';
+							break;
+						default:
+							throw new Exception("Unrecognized short option -{$shortOption}");
+							break;
+					}
+				}
+			} elseif(count($argumentsRequired) > 0) {
+				switch($argumentsRequired[0]) {
+					case 'c':
+						$configFilename = $_SERVER['argv'][$i];
+						break;
+				}
+
+				unset($argumentsRequired[0]);
+			} else {
+				//Arguments.  Since we don't have any non-switch arguments, throw an error.
+				throw new Exception("Too many arguments (first unnecessary argument: {$_SERVER['argv'][$i]})");
+			}
+		}
+
+		if(count($argumentsRequired) > 0) {
+			throw new Exception("Option '-{$argumentsRequired[0]}' requires an argument.");
+		}
+	}
+} catch(Exception $e) {
+	echo "Error: {$e->getMessage()}\n";
+	echo "Usage: php lizardlinky.php [OPTIONS]\n";
+	echo "Try 'php lizardlinky.php --help' for more information.\n";
+	die(1);
+}
+//End parse arguments
 
 function getLine($ircLink, $debug = false) {
         $toRead = array($ircLink);
@@ -301,8 +381,8 @@ $globalACL = array();
 $channels = array();
 $interwikis = array();
 
-echo "[*] Reading configuration file lizardlinky.conf.inc...";
-require('lizardlinky.conf.inc');
+echo "[*] Reading configuration file {$configFilename}...";
+require($configFilename);
 echo "\010\010\010 [OK]\n";
 
 echo "[*] Checking required configuration values...";
